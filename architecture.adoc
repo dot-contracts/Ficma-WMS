@@ -1,0 +1,420 @@
+= SPEC-001: Online-Based Logistics System
+:sectnums:
+:toc:
+
+== Background
+
+The creation of this logistics system is driven by the need to streamline the parcel management process across multiple platforms, including web, desktop, and mobile applications. The primary objectives are to minimize the risk of parcels getting lost, ensure accurate and full collection of payments, and facilitate clear communication with customers. This system aims to enhance efficiency in capturing parcel details, dispatching parcels, and providing real-time tracking information to customers. By leveraging role-based functionalities and integrating with smart POS devices, the system addresses the logistical challenges faced by modern courier services.
+
+== Requirements
+
+*Must Have*:
+- Role-based mobile application for clerks and confirmers
+- Desktop application with branch manager views
+- Web application for customer parcel tracking
+- Automated SMS notifications for senders and receivers
+- Integration with smart POS devices for scanning and receipt generation
+- Generation of QR codes for parcel tracking
+- Secure payment handling and tracking
+
+*Should Have*:
+- Secure authentication and authorization mechanisms
+- Real-time synchronization between mobile, desktop, and web applications
+
+*Could Have*:
+- Analytics and reporting features for operational insights
+- Integration with third-party courier services
+
+*Won't Have*:
+- Support for legacy mobile devices without smart POS capabilities
+
+== Method
+
+=== High-Level Architecture
+
+[plantuml]
+----
+@startuml
+actor Customer
+actor Clerk
+actor Confirmer
+actor BranchManager
+
+package "Mobile Application" {
+  [React Native/Flutter App]
+}
+
+package "Web Application" {
+  [Django App]
+}
+
+package "Desktop Application" {
+  [WPF/.NET App]
+}
+
+package "Backend Services" {
+  [Django Backend]
+}
+
+package "Database" {
+  [Centralized Database (PostgreSQL)]
+  [Firebase]
+}
+
+package "Messaging API" {
+  [Twilio API]
+}
+
+Customer --> [Django App] : Track Parcels
+Clerk --> [React Native/Flutter App] : Capture Parcel Details
+Confirmer --> [React Native/Flutter App] : Dispatch Parcels
+BranchManager --> [WPF/.NET App] : Monitor Parcel Processes
+[React Native/Flutter App] --> [Django Backend] : API Requests
+[Django App] --> [Django Backend] : API Requests
+[WPF/.NET App] --> [Django Backend] : API Requests
+[Django Backend] --> [Centralized Database (PostgreSQL)] : DB Operations
+[Django Backend] --> [Firebase] : Data Sync
+[Django Backend] --> [Twilio API] : Send SMS
+@enduml
+----
+
+=== Component Breakdown
+
+==== Mobile Application
+- **Technology**: React Native or Flutter
+- **Roles**: Clerk and Confirmer
+- **Functionalities**:
+  - Clerks: Capture parcel details, auto-generate waybill number, generate QR code, send SMS notifications.
+  - Confirmers: Scan QR code, dispatch parcels, generate dispatch tracking code.
+
+==== Web Application
+- **Technology**: Django
+- **Role**: Customer
+- **Functionalities**: 
+  - Track parcels using dispatch tracking code.
+  - Show parcel status (collection, warehouse, in transit, arrived).
+
+==== Desktop Application
+- **Technology**: WPF with Entity Framework and .NET (C#)
+- **Role**: Branch Manager
+- **Functionalities**: 
+  - Monitor parcel processes specific to their branch.
+
+==== Backend Services
+- **Technology**: Django
+- **Functionalities**:
+  - Handle business logic and database interactions.
+  - Integrate with external messaging API (Twilio) for SMS notifications.
+
+==== Database
+- **Technology**: PostgreSQL (for web and desktop applications), Firebase (for mobile application)
+- **Data**:
+  - Parcel details, user roles, tracking information, transaction records.
+
+==== Messaging API
+- **Technology**: Twilio API
+- **Functionality**: Send SMS notifications to senders and receivers of parcels.
+
+=== Database Schema
+```sql
+-- Users Table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    branch_id INT
+);
+
+-- Branches Table
+CREATE TABLE branches (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    address VARCHAR(255) NOT NULL
+);
+
+-- Parcels Table
+CREATE TABLE parcels (
+    id SERIAL PRIMARY KEY,
+    waybill_number VARCHAR(50) UNIQUE NOT NULL,
+    shipping_from VARCHAR(255) NOT NULL,
+    shipping_to VARCHAR(255) NOT NULL,
+    clerk_id INT REFERENCES users(id),
+    quantity INT NOT NULL,
+    description TEXT,
+    photo_url VARCHAR(255),
+    price DECIMAL(10, 2) NOT NULL,
+    payment_type VARCHAR(50) NOT NULL, -- 'prepaid', 'COD', 'contract'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    branch_id INT REFERENCES branches(id)
+);
+
+-- Dispatches Table
+CREATE TABLE dispatches (
+    id SERIAL PRIMARY KEY,
+    parcel_id INT REFERENCES parcels(id),
+    confirmer_id INT REFERENCES users(id),
+    dispatch_code VARCHAR(50) UNIQUE NOT NULL,
+    vehicle_id INT,
+    dispatched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Payments Table
+CREATE TABLE payments (
+    id SERIAL PRIMARY KEY,
+    parcel_id INT REFERENCES parcels(id),
+    amount DECIMAL(10, 2) NOT NULL,
+    status VARCHAR(50) NOT NULL, -- 'pending', 'completed'
+    paid_at TIMESTAMP
+);
+```
+
+==== Firebase Schema
+```
+{
+  "users": {
+    "userId": {
+      "username": "string",
+      "password": "string",
+      "role": "string",
+      "branchId": "string"
+    }
+  },
+  "parcels": {
+    "parcelId": {
+      "waybillNumber": "string",
+      "shippingFrom": "string",
+      "shippingTo": "string",
+      "clerkId": "string",
+      "quantity": "number",
+      "description": "string",
+      "photoUrl": "string",
+      "price": "number",
+      "paymentType": "string",
+      "createdAt": "timestamp",
+      "branchId": "string"
+    }
+  },
+  "dispatches": {
+    "dispatchId": {
+      "parcelId": "string",
+      "confirmerId": "string",
+      "dispatchCode": "string",
+      "vehicleId": "string",
+      "dispatchedAt": "timestamp"
+    }
+  },
+  "payments": {
+    "paymentId": {
+      "parcelId": "string",
+      "amount": "number",
+      "status": "string",
+      "paidAt": "timestamp"
+    }
+  }
+}
+```
+=== API Endpoints
+
+User Authentication:
+
+``POST /api/auth/login``: User login
+
+``POST /api/auth/register``: User registration
+
+Parcel Management:
+
+``POST /api/parcels``: Create a new parcel (Clerk)
+
+``GET /api/parcels/{id}``: Get parcel details
+
+``GET /api/parcels``: List all parcels (Branch Manager)
+
+Dispatch Management:
+
+``POST /api/dispatches``: Create a new dispatch (Confirmer)
+
+``GET /api/dispatches/{id}``: Get dispatch details
+
+``GET /api/dispatches``: List all dispatches (Branch Manager)
+
+Payment Management:
+
+
+``POST /api/payments``: Create a new payment record
+
+``GET /api/payments/{id}``: Get payment details
+
+``GET /api/payments``: List all payments
+
+
+Tracking:
+
+
+``GET /api/tracking/{dispatchCode}``: Get tracking details (Customer)
+
+
+==== Example API Endpoint Definitions
+
+===== Django views.py
+
+```
+from rest_framework import viewsets
+from .models import User, Parcel, Dispatch, Payment
+from .serializers import UserSerializer, ParcelSerializer, DispatchSerializer, PaymentSerializer
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+class ParcelViewSet(viewsets.ModelViewSet):
+    queryset = Parcel.objects.all()
+    serializer_class = ParcelSerializer
+
+class DispatchViewSet(viewsets.ModelViewSet):
+    queryset = Dispatch.objects.all()
+    serializer_class = DispatchSerializer
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+```
+
+===== urls.py
+```
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import UserViewSet, ParcelViewSet, DispatchViewSet, PaymentViewSet
+
+router = DefaultRouter()
+router.register(r'users', UserViewSet)
+router.register(r'parcels', ParcelViewSet)
+router.register(r'dispatches', DispatchViewSet)
+router.register(r'payments', PaymentViewSet)
+
+urlpatterns = [
+    path('api/', include(router.urls)),
+]
+```
+
+=== Algorithms
+
+===== Waybill Number Generation:
+```
+import uuid
+from datetime import datetime
+
+def generate_waybill_number():
+    return f"WB-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+
+```
+
+===== QR Code Generation:
+```
+import qrcode
+
+def generate_qr_code(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill='black', back_color='white')
+    return img
+```
+
+===== Dispatch Tracking Code Generation:
+```
+def generate_dispatch_tracking_code():
+    return f"DT-{uuid.uuid4().hex[:8]}"
+```
+=== Example Twilio Integration
+
+Install Twilio
+
+``pip install twilio``
+
+```
+from twilio.rest import Client
+
+def send_sms(to, body):
+    account_sid = 'your_account_sid'
+    auth_token = 'your_auth_token'
+    client = Client(account_sid, auth_token)
+    
+    message = client.messages.create(
+        body=body,
+        from_='+1234567890', # Your Twilio number
+        to=to
+    )
+    return message.sid
+```
+
+=== Implementation Steps
+
+===== Set up the development environment:
+
+- Install and configure PostgreSQL and Firebase.
+- Set up Django for web backend.
+- Set up React Native/Flutter for mobile development.
+- Set up WPF/.NET for desktop development.
+
+===== Develop the Mobile Application:
+
+- Implement role-based authentication.
+- Implement parcel detail capture and QR code generation.
+- Integrate with Firebase for data storage.
+- Implement SMS notification using Twilio API.
+
+===== Develop the Web Application:
+
+- Implement customer parcel tracking.
+- Integrate with PostgreSQL for data storage.
+- Expose API endpoints for tracking details.
+
+===== Develop the Desktop Application:
+
+- Implement role-based views for branch managers.
+- Integrate with PostgreSQL for data access.
+
+===== Develop the Backend Services:
+
+- Implement API endpoints for parcel, dispatch, and payment management.
+- Implement business logic for waybill number, QR code, and dispatch tracking code generation.
+- Integrate with Twilio API for SMS notifications.
+
+===== Set up Messaging API:
+
+- Configure Twilio account and obtain API credentials.
+- Implement SMS sending functionality in the backend services.
+
+===== Testing and Deployment:
+
+- Conduct unit and integration testing.
+- Deploy the applications to respective platforms (App Store, Play Store, web server, etc.).
+- Monitor and iterate based on user feedback.
+
+== Milestones
+
+- Requirement Analysis - Pending
+- High-Level Architecture Design - Pending
+- Database Schema Design - Pending
+- API Endpoint Design - Pending
+- Implementation of Mobile Application - Pending
+- Implementation of Web Application - Pending
+- Implementation of Desktop Application - Pending
+- Integration with Messaging API - Pending
+- Testing and Deployment - Pending
+
+== Gathering Results
+
+To evaluate whether the requirements were addressed properly, we will gather feedback from users during the beta testing phase. Key performance indicators (KPIs) will include:
+
+- Reduction in lost parcels
+- Accuracy of payment collection
+- Customer satisfaction based on timely and accurate notifications
+- Performance and reliability of the system across all platforms
+- Post-production performance will be monitored to ensure the system operates efficiently and meets the expected outcomes.
